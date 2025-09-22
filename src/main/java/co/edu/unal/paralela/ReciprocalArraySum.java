@@ -154,8 +154,9 @@ public final class ReciprocalArraySum {
         ReciprocalArraySumTask left = new ReciprocalArraySumTask(0, mid, input);
         ReciprocalArraySumTask right = new ReciprocalArraySumTask(mid, input.length, input);
 
-        pool.invoke(left);
-        pool.invoke(right);
+        left.fork();
+        right.compute();
+        left.join();
 
         return left.getValue() + right.getValue();
     }
@@ -173,21 +174,26 @@ public final class ReciprocalArraySum {
     protected static double parManyTaskArraySum(final double[] input,
             final int numTasks) {
 
-        ForkJoinPool pool = new ForkJoinPool();
-        ReciprocalArraySumTask[] tasks = new ReciprocalArraySumTask[numTasks];
+        assert numTasks > 0;
 
+        ForkJoinPool pool = new ForkJoinPool();
+
+        ReciprocalArraySumTask[] tasks = new ReciprocalArraySumTask[numTasks];
         int n = input.length;
+
         for (int i = 0; i < numTasks; i++){
             int start = getChunkStartInclusive(i, numTasks, n);
             int end = getChunkEndExclusive(i, numTasks, n);
             tasks[i] = new ReciprocalArraySumTask(start, end, input);
         }
 
-        for (ReciprocalArraySumTask task : tasks)
-                pool.execute(task);
+        for (int i = 0; i < numTasks - 1; i++)
+            tasks[i].fork();
 
-        for (ReciprocalArraySumTask task : tasks)
-                task.join();
+        tasks[numTasks - 1].compute();
+
+        for (int i = 0; i < numTasks - 1; i++)
+                tasks[i].join();
 
         double sum = 0;
         for (ReciprocalArraySumTask task : tasks)
