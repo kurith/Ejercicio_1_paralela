@@ -8,6 +8,10 @@ import java.util.concurrent.ForkJoinPool;
  */
 public final class ReciprocalArraySum {
 
+    private static final int PARALLELISM = Runtime.getRuntime().availableProcessors();
+    private static final int THRESHOLD_FACTOR = 4;
+    private static final ForkJoinPool pool = ForkJoinPool.commonPool();
+
     /**
      * Constructor.
      */
@@ -29,6 +33,10 @@ public final class ReciprocalArraySum {
         }
 
         return sum;
+    }
+
+    private static int calculateThreshold(int totalElements) {
+        return Math.max(1, totalElements / (PARALLELISM * THRESHOLD_FACTOR));
     }
 
     /**
@@ -85,6 +93,7 @@ public final class ReciprocalArraySum {
      * para realizar la suma de los recíprocos del arreglo en paralelo.
      */
     private static class ReciprocalArraySumTask extends RecursiveAction {
+        private final int threshold;
         /**
          * Iniciar el índice para el recorrido transversal hecho por esta tarea.
          */
@@ -114,6 +123,7 @@ public final class ReciprocalArraySum {
             this.startIndexInclusive = setStartIndexInclusive;
             this.endIndexExclusive = setEndIndexExclusive;
             this.input = setInput;
+            this.threshold = calculateThreshold(input.length);
         }
 
         /**
@@ -127,11 +137,24 @@ public final class ReciprocalArraySum {
         @Override
         protected void compute() {
             // Para hacer
-            double sum = 0;
-            for (int i = startIndexInclusive; i < endIndexExclusive; i++){
-                sum += 1 / input[i];
+            int len = endIndexExclusive - startIndexInclusive;
+            if (len <= threshold){
+                double sum = 0;
+                for (int i = startIndexInclusive; i < endIndexExclusive; i++)
+                        sum += 1 / input[i];
+                value = sum;
+            } else {
+                int mid = startIndexInclusive + (len / 2);
+                ReciprocalArraySumTask left = new ReciprocalArraySumTask(startIndexInclusive, mid, input);
+                ReciprocalArraySumTask right = new ReciprocalArraySumTask(mid, endIndexExclusive, input);
+
+                left.fork();
+                right.compute();
+                left.join();
+
+                value = left.getValue() + right.getValue();
             }
-            value = sum;
+
         }
     }
 
@@ -145,20 +168,12 @@ public final class ReciprocalArraySum {
      * @return La suma de los recíprocos del arreglo de entrada
      */
     protected static double parArraySum(final double[] input) {
-        assert input.length % 2 == 0;
 
-        ForkJoinPool pool = new ForkJoinPool();
+        ReciprocalArraySumTask task = new ReciprocalArraySumTask(0, input.length, input);
 
-        int mid = input.length / 2;
+        pool.invoke(task);
 
-        ReciprocalArraySumTask left = new ReciprocalArraySumTask(0, mid, input);
-        ReciprocalArraySumTask right = new ReciprocalArraySumTask(mid, input.length, input);
-
-        left.fork();
-        right.compute();
-        left.join();
-
-        return left.getValue() + right.getValue();
+        return task.getValue();
     }
 
     /**
@@ -173,10 +188,6 @@ public final class ReciprocalArraySum {
      */
     protected static double parManyTaskArraySum(final double[] input,
             final int numTasks) {
-
-        assert numTasks > 0;
-
-        ForkJoinPool pool = new ForkJoinPool();
 
         ReciprocalArraySumTask[] tasks = new ReciprocalArraySumTask[numTasks];
         int n = input.length;
